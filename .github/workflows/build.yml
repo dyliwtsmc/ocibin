@@ -1,0 +1,89 @@
+name: Build and Push k3s Docker Image
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      k3s_version:
+        description: "k3s version override (e.g. v1.34.1+k3s1). Leave empty to auto-detect latest 1.34.x."
+        required: false
+        default: ""
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve k3s version
+        id: k3s
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          INPUT="${{ github.event.inputs.k3s_version }}"
+          if [[ -n "$INPUT" ]]; then
+            echo "version=$INPUT" >> "$GITHUB_OUTPUT"
+            echo "Pinned k3s version: $INPUT"
+          else
+            # Fetch the latest release tag that matches v1.34.x+k3s*
+            VERSION=$(gh api repos/k3s-io/k3s/releases \
+              --paginate \
+              --jq '[.[] | select(.tag_name | test("^v1\\.3[4-9]\\.|^v1\\.[4-9][0-9]\\.")) | .tag_name] | first')
+            if [[ -z "$VERSION" ]]; then
+              echo "::error::No k3s release found for Kubernetes >= 1.34"
+              exit 1
+            fi
+            echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+            echo "Resolved k3s version: $VERSION"
+          fi
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=${{ steps.k3s.outputs.version }}
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+            type=sha,prefix=sha-
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            K3S_VERSION=${{ steps.k3s.outputs.version }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
