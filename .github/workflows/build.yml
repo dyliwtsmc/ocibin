@@ -70,6 +70,10 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          labels: |
+            org.opencontainers.image.title=k3s
+            org.opencontainers.image.description=Minimal k3s amd64 image on Alpine
+            org.opencontainers.image.version=${{ steps.k3s.outputs.version }}
           tags: |
             type=raw,value=${{ steps.k3s.outputs.version }}
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}

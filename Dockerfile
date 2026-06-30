@@ -12,6 +12,13 @@ RUN apk add --no-cache curl ca-certificates && \
 
 FROM alpine:3.21
 
+ARG K3S_VERSION
+LABEL org.opencontainers.image.title="k3s" \
+      org.opencontainers.image.description="Minimal k3s amd64 image on Alpine" \
+      org.opencontainers.image.version="${K3S_VERSION}" \
+      org.opencontainers.image.source="https://github.com/k3s-io/k3s" \
+      org.opencontainers.image.licenses="Apache-2.0"
+
 RUN apk add --no-cache \
       ca-certificates \
       iptables \
